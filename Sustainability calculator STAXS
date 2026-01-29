@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>STAXS – CO₂ Savings Calculator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 24px;
+      color: #111;
+    }
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+    nav {
+      margin-bottom: 24px;
+    }
+    nav button {
+      margin-right: 8px;
+      padding: 8px 14px;
+      border: none;
+      cursor: pointer;
+      background: #eee;
+      border-radius: 6px;
+    }
+    nav button.active {
+      background: #F24D9A;
+      color: white;
+    }
+    .card {
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-weight: 600;
+    }
+    input, select {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #ddd;
+      padding: 6px;
+      text-align: left;
+    }
+    .muted {
+      color: #666;
+      font-size: 0.9em;
+    }
+    .danger {
+      color: #b00020;
+    }
+  </style>
+</head>
+
+<body>
+
+<nav>
+  <button id="btnCalc" class="active">Calculator</button>
+  <button id="btnConfig">Configuration</button>
+</nav>
+
+<div id="app"></div>
+
+<script>
+/* ==============================
+   CONSTANTS
+================================ */
+const KG_CO2_PER_TREE = 21;
+const KG_CO2_PER_GAS_DAY = 5;
+const STORAGE_KEY = "staxs-co2-config";
+
+/* ==============================
+   DEFAULT DATA (FROM SCREENSHOTS)
+================================ */
+const DEFAULT_CONFIG = {
+  materials: [
+    { id: "isopreen", name: "Isopreen (band)", co2: 0.8 },
+    { id: "pc", name: "PC (Lens)", co2: 6.25 },
+    { id: "pvc", name: "PVC (frame)", co2: 2.4 },
+    { id: "tpv", name: "TPV (frame)", co2: 0.8 }
+  ],
+  transports: [
+    { id: "air", name: "Air Freight", co2: 0.5, default: false },
+    { id: "electric", name: "Electric truck", co2: 0.05, default: false },
+    { id: "ship", name: "Ship", co2: 0.01, default: false },
+    { id: "train", name: "Train", co2: 0.03, default: false },
+    { id: "truck", name: "Truck", co2: 0.12, default: true }
+  ],
+  products: [
+    {
+      id: "F-0300",
+      name: "F-0300",
+      materials: [
+        { materialId: "tpv", weight: 0.0562 },
+        { materialId: "pc", weight: 0.0367 },
+        { materialId: "isopreen", weight: 0.0129 }
+      ]
+    },
+    {
+      id: "FS-0086",
+      name: "FS-0086",
+      materials: [
+        { materialId: "pvc", weight: 0.0424 },
+        { materialId: "pc", weight: 0.02036 },
+        { materialId: "isopreen", weight: 0.00463 }
+      ]
+    }
+  ]
+};
+
+/* ==============================
+   STATE
+================================ */
+let state = loadState();
+let page = "calc";
+
+/* ==============================
+   STORAGE
+================================ */
+function loadState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  return saved ? JSON.parse(saved) : structuredClone(DEFAULT_CONFIG);
+}
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ==============================
+   HELPERS
+================================ */
+function materialById(id) {
+  return state.materials.find(m => m.id === id);
+}
+function productSaving(product) {
+  return product.materials.reduce((sum, m) => {
+    return sum + (m.weight * materialById(m.materialId).co2);
+  }, 0);
+}
+
+/* ==============================
+   RENDER
+================================ */
+function render() {
+  document.getElementById("btnCalc").classList.toggle("active", page === "calc");
+  document.getElementById("btnConfig").classList.toggle("active", page === "config");
+  page === "calc" ? renderCalculator() : renderConfig();
+}
+
+/* ==============================
+   CALCULATOR
+================================ */
+function renderCalculator() {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div class="card">
+      <h1>CO₂ Savings Calculator</h1>
+      <label>Product</label>
+      <select id="productSelect">
+        <option value="">Select product</option>
+        ${state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join("")}
+      </select>
+
+      <label>Quantity (pcs)</label>
+      <input id="qty" type="number" min="1" />
+
+      <label>Distance to STAXS (km)</label>
+      <input id="distance" type="number" min="0" />
+
+      <button style="margin-top:12px" onclick="calculate()">Calculate</button>
+    </div>
+
+    <div id="results"></div>
+  `;
+}
+
+function calculate() {
+  const productId = document.getElementById("productSelect").value;
+  const qty = Number(document.getElementById("qty").value);
+  const distance = Number(document.getElementById("distance").value || 0);
+
+  if (!productId || !qty) return;
+
+  const product = state.products.find(p => p.id === productId);
+  const savingPerUnit = productSaving(product);
+  const totalSaving = savingPerUnit * qty;
+
+  const trees = totalSaving / KG_CO2_PER_TREE;
+  const gasDays = totalSaving / KG_CO2_PER_GAS_DAY;
+
+  const transport = state.transports.find(t => t.default);
+  const logistics = distance * transport.co2;
+
+  document.getElementById("results").innerHTML = `
+    <div class="card">
+      <h2>Results</h2>
+      <p><strong>Total CO₂ savings:</strong> ${totalSaving.toFixed(2)} kg</p>
+      <p>${trees.toFixed(1)} trees per year</p>
+      <p>${gasDays.toFixed(1)} days of gas</p>
+      ${logistics > 0 ? `<p class="muted">Logistics CO₂: ${logistics.toFixed(2)} kg</p>` : ""}
+      <p class="muted">These figures are educated estimates.</p>
+    </div>
+  `;
+}
+
+/* ==============================
+   CONFIGURATION
+================================ */
+function renderConfig() {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div class="card">
+      <h1>Configuration (POC)</h1>
+      <p class="muted">
+        Stored locally in your browser. Changes are not shared.
+      </p>
+
+      <h3>Materials</h3>
+      ${state.materials.map((m, i) => `
+        <label>${m.name} (kg CO₂ / kg)</label>
+        <input type="number" value="${m.co2}"
+          onchange="state.materials[${i}].co2=this.value; saveState()" />
+      `).join("")}
+
+      <button class="danger" style="margin-top:12px"
+        onclick="localStorage.removeItem('${STORAGE_KEY}'); location.reload()">
+        Reset to defaults
+      </button>
+    </div>
+  `;
+}
+
+/* ==============================
+   NAVIGATION
+================================ */
+document.getElementById("btnCalc").onclick = () => { page = "calc"; render(); };
+document.getElementById("btnConfig").onclick = () => { page = "config"; render(); };
+
+render();
+</script>
+
+</body>
+</html>
