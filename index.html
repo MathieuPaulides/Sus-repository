@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nl">
 <head>
   <meta charset="UTF-8" />
-  <title>STAXS – CO₂ Savings Calculator</title>
+  <title>STAXS – CO₂-besparingscalculator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
@@ -70,7 +70,7 @@
 
 <nav>
   <button id="btnCalc" class="active">Calculator</button>
-  <button id="btnConfig">Configuration</button>
+  <button id="btnConfig">Configuratie</button>
 </nav>
 
 <div id="app"></div>
@@ -150,6 +150,9 @@ function productSaving(product) {
     return sum + (m.weight * materialById(m.materialId).co2);
   }, 0);
 }
+function formatKg(value) {
+  return `${value.toFixed(2)} kg CO₂`;
+}
 
 /* ==============================
    RENDER
@@ -167,20 +170,20 @@ function renderCalculator() {
   const app = document.getElementById("app");
   app.innerHTML = `
     <div class="card">
-      <h1>CO₂ Savings Calculator</h1>
+      <h1>CO₂-besparingscalculator</h1>
       <label>Product</label>
       <select id="productSelect">
-        <option value="">Select product</option>
+        <option value="">Selecteer product</option>
         ${state.products.map(p => `<option value="${p.id}">${p.name}</option>`).join("")}
       </select>
 
-      <label>Quantity (pcs)</label>
+      <label>Aantal (stuks)</label>
       <input id="qty" type="number" min="1" />
 
-      <label>Distance to STAXS (km)</label>
+      <label>Afstand naar STAXS (km)</label>
       <input id="distance" type="number" min="0" />
 
-      <button style="margin-top:12px" onclick="calculate()">Calculate</button>
+      <button style="margin-top:12px" onclick="calculate()">Bereken</button>
     </div>
 
     <div id="results"></div>
@@ -192,26 +195,34 @@ function calculate() {
   const qty = Number(document.getElementById("qty").value);
   const distance = Number(document.getElementById("distance").value || 0);
 
-  if (!productId || !qty) return;
+  if (!productId || qty <= 0 || distance < 0) {
+    document.getElementById("results").innerHTML = `
+      <div class="card danger">
+        Vul een product in, kies een aantal groter dan 0 en gebruik een geldige afstand.
+      </div>
+    `;
+    return;
+  }
 
   const product = state.products.find(p => p.id === productId);
   const savingPerUnit = productSaving(product);
   const totalSaving = savingPerUnit * qty;
 
-  const trees = totalSaving / KG_CO2_PER_TREE;
-  const gasDays = totalSaving / KG_CO2_PER_GAS_DAY;
-
   const transport = state.transports.find(t => t.default);
-  const logistics = distance * transport.co2;
+  const logistics = distance * transport.co2 * qty;
+  const netSaving = totalSaving - logistics;
+  const trees = Math.max(netSaving, 0) / KG_CO2_PER_TREE;
+  const gasDays = Math.max(netSaving, 0) / KG_CO2_PER_GAS_DAY;
 
   document.getElementById("results").innerHTML = `
     <div class="card">
-      <h2>Results</h2>
-      <p><strong>Total CO₂ savings:</strong> ${totalSaving.toFixed(2)} kg</p>
-      <p>${trees.toFixed(1)} trees per year</p>
-      <p>${gasDays.toFixed(1)} days of gas</p>
-      ${logistics > 0 ? `<p class="muted">Logistics CO₂: ${logistics.toFixed(2)} kg</p>` : ""}
-      <p class="muted">These figures are educated estimates.</p>
+      <h2>Resultaat</h2>
+      <p><strong>Bruto CO₂-besparing:</strong> ${formatKg(totalSaving)}</p>
+      ${logistics > 0 ? `<p class="muted">Transportuitstoot (${transport.name}): ${formatKg(logistics)}</p>` : ""}
+      <p><strong>Netto CO₂-besparing:</strong> ${formatKg(netSaving)}</p>
+      <p>${trees.toFixed(1)} bomen per jaar</p>
+      <p>${gasDays.toFixed(1)} dagen gasverbruik</p>
+      <p class="muted">Deze berekening is een indicatieve schatting.</p>
     </div>
   `;
 }
@@ -223,21 +234,21 @@ function renderConfig() {
   const app = document.getElementById("app");
   app.innerHTML = `
     <div class="card">
-      <h1>Configuration (POC)</h1>
+      <h1>Configuratie</h1>
       <p class="muted">
-        Stored locally in your browser. Changes are not shared.
+        Wordt lokaal opgeslagen in je browser. Wijzigingen worden niet gedeeld.
       </p>
 
-      <h3>Materials</h3>
+      <h3>Materialen</h3>
       ${state.materials.map((m, i) => `
         <label>${m.name} (kg CO₂ / kg)</label>
         <input type="number" value="${m.co2}"
-          onchange="state.materials[${i}].co2=this.value; saveState()" />
+          onchange="state.materials[${i}].co2=Number(this.value); saveState()" />
       `).join("")}
 
       <button class="danger" style="margin-top:12px"
         onclick="localStorage.removeItem('${STORAGE_KEY}'); location.reload()">
-        Reset to defaults
+        Herstel standaardwaarden
       </button>
     </div>
   `;
